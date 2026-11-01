@@ -4,7 +4,8 @@ import { collection, deleteDoc, doc, onSnapshot, setDoc, updateDoc, writeBatch }
 import { db } from "../firebase";
 import { useMe } from "../auth";
 import { useFamily } from "../data";
-import { fullName } from "../lib/people";
+import { descendantsOf, fullName } from "../lib/people";
+import { parseGedcom, planImport, type ImportPlan } from "../lib/gedcom";
 import { cancelInvite, isGmail, resendInvite, sendInvite } from "../lib/mutations";
 import type { Branch, FamilyUser, Invite, Role } from "../types";
 
@@ -28,8 +29,19 @@ function BranchEditor({ branch, onDone }: { branch?: Branch; onDone: () => void 
       personId: personId || null,
       order: branch?.order ?? branches.length,
     });
-    // O irmão ou irmã que dá nome ao ramo passa a pertencer a ele.
-    if (personId) await updateDoc(doc(db, "people", personId), { branchId: ref.id });
+    // O irmão ou irmã que dá nome ao ramo, os descendentes e os cônjuges passam a pertencer a ele
+    // (quem já tem outro ramo continua onde está).
+    if (personId) {
+      const ids = [...descendantsOf(personId, people)].filter((id) => {
+        const p = people.find((x) => x.id === id);
+        return p && (id === personId || !p.branchId);
+      });
+      for (let i = 0; i < ids.length; i += 450) {
+        const batch = writeBatch(db);
+        ids.slice(i, i + 450).forEach((id) => batch.update(doc(db, "people", id), { branchId: ref.id }));
+        await batch.commit();
+      }
+    }
     onDone();
   }
 
@@ -137,6 +149,67 @@ function LinkMyself() {
   );
 }
 
+/** Importa (ou reimporta) a árvore exportada do MyHeritage em formato GEDCOM. */
+function ImportGedcom() {
+  const { people } = useFamily();
+  const [plan, setPlan] = useState<ImportPlan | null>(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function onFile(file: File | undefined) {
+    setMsg("");
+    setPlan(null);
+    if (!file) return;
+    const ged = parseGedcom(await file.text());
+    if (ged.length === 0) return setMsg("Nenhuma pessoa encontrada neste arquivo. Ele é um GEDCOM (.ged)?");
+    setPlan(planImport(ged, people, () => doc(collection(db, "people")).id));
+  }
+
+  async function apply() {
+    if (!plan) return;
+    setBusy(true);
+    try {
+      for (let i = 0; i < plan.writes.length; i += 450) {
+        const batch = writeBatch(db);
+        for (const w of plan.writes.slice(i, i + 450)) batch.set(doc(db, "people", w.id), w.data, { merge: true });
+        await batch.commit();
+      }
+      setMsg(`Pronto: ${plan.created.length} pessoas novas e ${plan.updated.length} atualizadas.`);
+      setPlan(null);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Erro ao importar.");
+    }
+    setBusy(false);
+  }
+
+  return (
+    <section className="card">
+      <h2>Importar do MyHeritage</h2>
+      <p className="muted small">
+        No MyHeritage: Árvore genealógica → Gerenciar árvores → Exportar para GEDCOM. Escolha o arquivo .ged aqui.
+        Pode importar de novo sempre que a árvore mudar: quem já está no site é atualizado, sem duplicar.
+        Fotos, contatos, ramos e logins do site não são alterados.
+      </p>
+      <input type="file" accept=".ged,.gedcom,text/plain" onChange={(e) => onFile(e.target.files?.[0])} />
+      {plan && (
+        <div className="notice" style={{ marginTop: 12 }}>
+          <p>
+            {plan.created.length} pessoas novas, {plan.updated.length} já existentes serão atualizadas.
+          </p>
+          {plan.updated.length > 0 && plan.updated.length <= 30 && (
+            <p className="small muted">Atualizadas: {plan.updated.map((u) => fullName(u.person)).join(", ")}</p>
+          )}
+          <div className="actions">
+            <button className="primary" onClick={apply} disabled={busy}>{busy ? "Importando…" : "Importar"}</button>
+            <button onClick={() => setPlan(null)} disabled={busy}>Cancelar</button>
+          </div>
+        </div>
+      )}
+      {msg && <p className="notice">{msg}</p>}
+    </section>
+  );
+}
+
 export function AdminPage() {
   const me = useMe();
   const { branches, users } = useFamily();
@@ -163,12 +236,13 @@ export function AdminPage() {
     <div>
       <h1>Administração</h1>
       <LinkMyself />
+      <ImportGedcom />
 
       <section className="card">
         <h2>Ramos (um por irmão ou irmã)</h2>
         <p className="muted small">
-          Ordem sugerida: 1) cadastre os avós e os pais na árvore (sem ramo); 2) cadastre os 10 irmãos como filhos dos pais;
-          3) crie um ramo para cada irmão; 4) convide um representante por ramo.
+          Ordem sugerida: 1) importe a árvore do MyHeritage (ou cadastre avós, pais e os 10 irmãos à mão);
+          2) crie um ramo para cada irmão: os descendentes entram no ramo automaticamente; 3) convide um representante por ramo.
         </p>
         <table className="table">
           <thead><tr><th>Ramo</th><th>Representante</th><th /></tr></thead>

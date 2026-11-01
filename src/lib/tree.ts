@@ -58,10 +58,24 @@ export function buildTree(people: Person[]): { roots: TreeUnit[]; width: number;
     .filter((p) => !p.spouseIds.some((id) => { const s = byId.get(id); return s && hasParents(s); }))
     .sort(byBirth);
 
-  const roots: TreeUnit[] = [];
-  for (const p of rootCandidates) {
-    if (!placed.has(p.id)) roots.push(build(p, 0));
-  }
+  // Com uma árvore importada aparecem várias "raízes" (por exemplo, os pais de um cônjuge).
+  // Mostramos só a maior família; as outras pessoas ficam na lista de Pessoas.
+  const childrenOf = new Map<string, string[]>();
+  for (const p of people) for (const par of p.parentIds) childrenOf.set(par, [...(childrenOf.get(par) ?? []), p.id]);
+  const size = (rootId: string) => {
+    const seen = new Set<string>();
+    const queue = [rootId, ...(byId.get(rootId)?.spouseIds ?? [])];
+    while (queue.length) {
+      const id = queue.pop()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      queue.push(...(childrenOf.get(id) ?? []));
+    }
+    return seen.size;
+  };
+  const main = rootCandidates.map((p) => ({ p, n: size(p.id) })).sort((a, b) => b.n - a.n)[0];
+
+  const roots: TreeUnit[] = main ? [build(main.p, 0)] : [];
 
   const place = (u: TreeUnit, left: number) => {
     u.x = left + (u.subW - u.unitW) / 2;

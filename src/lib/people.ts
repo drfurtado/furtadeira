@@ -22,11 +22,13 @@ export function lifeYears(p: Person): string {
 export function formatDate(iso?: string): string {
   if (!iso) return "";
   const [y, m, d] = iso.split("-");
-  return d && m ? `${d}/${m}/${y}` : iso;
+  if (d && m) return `${d}/${m}/${y}`;
+  if (m) return `${m}/${y}`;
+  return y;
 }
 
 export function age(p: Person): number | null {
-  if (!p.birthDate || p.deceased || p.deathDate) return null;
+  if (!p.birthDate || p.birthDate.length < 10 || p.deceased || p.deathDate) return null;
   const b = new Date(p.birthDate + "T12:00:00");
   const now = new Date();
   let a = now.getFullYear() - b.getFullYear();
@@ -67,7 +69,7 @@ export function upcomingBirthdays(people: Person[], days = 30) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return people
-    .filter((p) => p.birthDate && !p.deceased && !p.deathDate)
+    .filter((p) => p.birthDate && p.birthDate.length >= 10 && !p.deceased && !p.deathDate)
     .map((p) => {
       const [, m, d] = p.birthDate!.split("-").map(Number);
       let next = new Date(today.getFullYear(), m - 1, d);
@@ -77,4 +79,19 @@ export function upcomingBirthdays(people: Person[], days = 30) {
     })
     .filter((x) => x.inDays <= days)
     .sort((a, b) => a.inDays - b.inDays);
+}
+
+/** Todos os descendentes de alguém, com os cônjuges deles (para montar um ramo). */
+export function descendantsOf(rootId: string, people: Person[]): Set<string> {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const out = new Set<string>();
+  const queue = [rootId];
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (out.has(id)) continue;
+    out.add(id);
+    for (const s of byId.get(id)?.spouseIds ?? []) out.add(s);
+    for (const c of people) if (c.parentIds.includes(id) && !out.has(c.id)) queue.push(c.id);
+  }
+  return out;
 }

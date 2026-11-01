@@ -38,6 +38,7 @@ export interface Person {
   spouseIds: string[];
   branchId: string | null;
   uid?: string | null;
+  gedcomKey?: string; // identificador vindo do MyHeritage (GEDCOM)
   createdBy?: string;
   updatedAt?: Timestamp;
 }
