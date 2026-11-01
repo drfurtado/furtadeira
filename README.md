@@ -31,14 +31,14 @@ Requires Node.js 22.
 npm install
 npm --prefix functions install
 npx firebase login
-npx firebase use --add      # pick your project; replaces COLOQUE-O-ID-DO-PROJETO in .firebaserc
+                            # .firebaserc already points to the "furtadeira" project
 npm run deploy
 ```
 
 The first deploy asks for two values and saves them in `functions/.env.<project-id>`:
 
 - `ADMIN_EMAILS`: your Gmail address (more than one can be separated by commas)
-- `SITE_URL`: for example `https://furtad.web.app`
+- `SITE_URL`: `https://furtadeira.web.app`
 
 Then open the site, sign in with the admin Gmail address, and follow the steps on the **Admin** page:
 

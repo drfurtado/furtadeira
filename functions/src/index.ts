@@ -18,7 +18,7 @@ const ADMIN_EMAILS = defineString("ADMIN_EMAILS", {
 });
 // Endereço do site, usado no e-mail de convite.
 const SITE_URL = defineString("SITE_URL", {
-  description: "Endereço do site, por exemplo https://furtad.web.app",
+  description: "Endereço do site, por exemplo https://furtadeira.web.app",
 });
 
 type Role = "admin" | "rep" | "member";
