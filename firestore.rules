@@ -1,0 +1,96 @@
+rules_version = '2';
+
+// Regra de ouro: sem convite aceito, nenhum dado.
+// Os documentos users/{uid} só são criados pela função joinFamily,
+// depois de conferir o convite. Tudo aqui depende deles.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function me() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function isMember() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && me().status == 'active';
+    }
+    function isAdmin() {
+      return isMember() && me().role == 'admin';
+    }
+    function isRepOf(branchId) {
+      return isMember() && me().role == 'rep' && branchId != null && me().branchId == branchId;
+    }
+    function unchanged(keys) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(keys);
+    }
+    function validPerson(p) {
+      return p.firstName is string && p.firstName.size() > 0 && p.firstName.size() <= 80
+        && p.parentIds is list && p.parentIds.size() <= 2
+        && p.spouseIds is list && p.spouseIds.size() <= 4;
+    }
+
+    match /users/{uid} {
+      allow read: if isMember();
+      // Só o admin muda papel, ramo ou bloqueia alguém.
+      allow update: if isAdmin() && unchanged(['email']);
+      allow create, delete: if false;
+    }
+
+    match /branches/{branchId} {
+      allow read: if isMember();
+      allow write: if isAdmin();
+    }
+
+    match /people/{personId} {
+      allow read: if isMember();
+
+      allow create: if validPerson(request.resource.data) && (
+        isAdmin()
+        || (isRepOf(request.resource.data.branchId) && request.resource.data.uid == null)
+      );
+
+      allow update: if validPerson(request.resource.data) && (
+        isAdmin()
+        || (isRepOf(resource.data.branchId) && unchanged(['branchId', 'uid']))
+        || (isMember() && resource.data.uid == request.auth.uid && unchanged(['branchId', 'uid']))
+      );
+
+      // Quem já tem login só pode ser removido pelo admin.
+      allow delete: if isAdmin()
+        || (isRepOf(resource.data.branchId) && resource.data.uid == null);
+    }
+
+    // O id do documento é o Gmail em minúsculas.
+    match /invites/{email} {
+      // resource == null: deixa conferir se um Gmail ainda não foi convidado.
+      allow read: if isAdmin() || (isMember() && resource == null) || isRepOf(resource.data.branchId);
+
+      allow create: if request.resource.data.email == email
+        && email.matches('^[^@\\s]+@[^@\\s]+$')
+        && request.resource.data.status == 'pending'
+        && request.resource.data.invitedBy == request.auth.uid
+        && request.resource.data.sendCount == 1
+        && (
+          isAdmin()
+          || (isRepOf(request.resource.data.branchId) && request.resource.data.role == 'member')
+        );
+
+      // Reenviar (sendCount + 1) ou cancelar.
+      allow update: if (isAdmin() || isRepOf(resource.data.branchId))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'sendCount', 'updatedAt'])
+        && request.resource.data.status in ['pending', 'cancelled']
+        && request.resource.data.sendCount >= resource.data.sendCount
+        && request.resource.data.sendCount <= resource.data.sendCount + 1;
+
+      allow delete: if isAdmin() || isRepOf(resource.data.branchId);
+    }
+
+    // Fila de e-mails (extensão Trigger Email). Só as funções escrevem aqui.
+    match /mail/{id} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "furtadeira",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:emulators": "VITE_USE_EMULATORS=1 vite",
+    "emulators": "firebase emulators:start --project demo-furtadeira --import ./emulator-data --export-on-exit",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
+    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-furtadeira \"vitest run tests\"",
+    "deploy": "npm run build && npm --prefix functions run build && firebase deploy",
+    "test:smoke": "npm --prefix functions run build && firebase emulators:exec --only auth,functions,firestore --project demo-furtadeira \"node tests/smoke.mjs\""
+  },
+  "dependencies": {
+    "firebase": "^13.1.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.5"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "firebase-tools": "^15.34.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
