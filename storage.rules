@@ -1,0 +1,28 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isMember() {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.status == 'active';
+    }
+
+    // Mesmas regras de quem pode editar a pessoa no banco de dados.
+    function canEditPerson(personId) {
+      let u = firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+      let p = firestore.get(/databases/(default)/documents/people/$(personId)).data;
+      return u.role == 'admin'
+        || (u.role == 'rep' && p.branchId != null && u.branchId == p.branchId)
+        || p.uid == request.auth.uid;
+    }
+
+    match /people/{personId}/{fileName} {
+      allow read: if isMember();
+      allow create, update: if isMember() && canEditPerson(personId)
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isMember() && canEditPerson(personId);
+    }
+  }
+}
